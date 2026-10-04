@@ -14,6 +14,14 @@ from firewall.config import Settings
 class UpstreamError(RuntimeError):
     """An upstream failed without exposing its response body or credentials."""
 
+    def __init__(
+        self,
+        message: str,
+        upstream_status_code: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.upstream_status_code = upstream_status_code
+
 
 class Upstream(Protocol):
     async def complete(self, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -110,6 +118,11 @@ class OpenAICompatibleUpstream:
                     "The configured model upstream response exceeded the size limit."
                 )
             data = response.json()
+        except httpx.HTTPStatusError as error:
+            raise UpstreamError(
+                "The configured model upstream rejected the request.",
+                upstream_status_code=error.response.status_code,
+            ) from error
         except (httpx.HTTPError, ValueError) as error:
             raise UpstreamError(
                 "The configured model upstream did not return a valid response."
@@ -156,6 +169,11 @@ class OpenAICompatibleUpstream:
                     _process_sse_data(pending_data, state)
         except UpstreamError:
             raise
+        except httpx.HTTPStatusError as error:
+            raise UpstreamError(
+                "The configured model upstream rejected the stream request.",
+                upstream_status_code=error.response.status_code,
+            ) from error
         except (httpx.HTTPError, ValueError, json.JSONDecodeError) as error:
             raise UpstreamError(
                 "The configured model upstream did not return a valid stream."

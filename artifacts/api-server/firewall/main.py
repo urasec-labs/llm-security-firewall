@@ -130,22 +130,28 @@ def _create_app(settings: Settings | None = None) -> FastAPI:
                 request.state.audit_event = "http_error"
             return response
         finally:
+            audit_record: dict[str, Any] = {
+                "event": request.state.audit_event,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": status_code,
+                "duration_ms": round(
+                    (time.perf_counter() - started) * 1000,
+                    3,
+                ),
+                "client_id": request.state.audit_client_id,
+                "findings": getattr(request.state, "audit_findings", []),
+            }
+            upstream_status = getattr(
+                request.state,
+                "upstream_status_code",
+                None,
+            )
+            if upstream_status is not None:
+                audit_record["upstream_status_code"] = upstream_status
             audit_logger.info(
                 "request",
-                extra={
-                    "audit_record": {
-                        "event": request.state.audit_event,
-                        "method": request.method,
-                        "path": request.url.path,
-                        "status_code": status_code,
-                        "duration_ms": round(
-                            (time.perf_counter() - started) * 1000,
-                            3,
-                        ),
-                        "client_id": request.state.audit_client_id,
-                        "findings": getattr(request.state, "audit_findings", []),
-                    }
-                },
+                extra={"audit_record": audit_record},
             )
 
     async def access_guard(
@@ -262,6 +268,8 @@ def _create_app(settings: Settings | None = None) -> FastAPI:
         try:
             safe_response, findings = await gateway.complete(payload)
         except UpstreamError as error:
+            request.state.audit_event = "upstream_error"
+            request.state.upstream_status_code = error.upstream_status_code
             raise HTTPException(
                 status_code=502,
                 detail="The configured model upstream could not complete the request.",

@@ -208,6 +208,8 @@ logs. Audit events are JSON lines on stdout and include route, status, latency,
 redaction/block categories, and a hashed client identifier—not the raw IP or
 token. Uvicorn's separate access logger is disabled to avoid duplicate
 non-structured request logs.
+For upstream HTTP failures, audit records may include the provider status code,
+but never its response body or request authorization header.
 
 The sliding-window rate limiter and counters are process-local and reset on
 restart. Each worker has a separate quota; use a shared Redis-backed limiter for

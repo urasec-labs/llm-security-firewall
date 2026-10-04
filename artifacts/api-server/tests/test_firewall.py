@@ -13,7 +13,7 @@ from firewall.detectors.rules import HeuristicDetector
 from firewall.detectors.semantic import cosine_similarity
 from firewall.guards.output_guard import OutputGuard
 from firewall.main import _create_app
-from firewall.upstream import OpenAICompatibleUpstream
+from firewall.upstream import OpenAICompatibleUpstream, UpstreamError
 
 
 def test_heuristics_detect_direct_injection() -> None:
@@ -306,6 +306,44 @@ def test_groq_compatible_stream_is_buffered_and_aggregated() -> None:
     assert response["choices"][0]["message"]["content"] == "alice@example.com"
     assert response["choices"][0]["finish_reason"] == "stop"
     assert response["usage"]["total_tokens"] == 6
+
+
+def test_upstream_http_status_is_preserved_without_error_body() -> None:
+    def upstream_handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            headers={"content-type": "application/json"},
+            json={"error": {"message": "model is no longer available"}},
+        )
+
+    async def request_completion() -> None:
+        upstream = OpenAICompatibleUpstream(
+            Settings(
+                upstream_mode="remote",
+                upstream_provider="groq",
+                upstream_base_url="https://api.groq.com/openai/v1",
+                upstream_api_key="test-groq-key",
+            ),
+            transport=httpx.MockTransport(upstream_handler),
+        )
+        try:
+            await upstream.complete_stream(
+                {
+                    "model": "retired-model",
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "Hello"}],
+                }
+            )
+        finally:
+            await upstream.close()
+
+    try:
+        asyncio.run(request_completion())
+    except UpstreamError as error:
+        assert error.upstream_status_code == 400
+        assert "model is no longer available" not in str(error)
+    else:
+        raise AssertionError("Expected the upstream error to be raised.")
 
 
 def test_client_authentication_and_rate_limit_are_enforced() -> None:
