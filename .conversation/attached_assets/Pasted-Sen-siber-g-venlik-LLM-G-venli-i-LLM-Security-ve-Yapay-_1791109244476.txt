@@ -1,0 +1,26 @@
+Sen siber güvenlik, LLM Güvenliği (LLM Security) ve Yapay Zeka Güvenlik Duvarları (AI WAF) konularında dünya çapında uzman bir Kıdemli Güvenlik Mimarı ve Oxford Üniversitesi'nde görev yapan bir Bilgisayar Bilimleri Profesörüsün. 
+
+Senden, "LLM Güvenliği İçin Gerçek Zamanlı Prompt Injection ve Zehirleme (Poisoning) Engelleyici Duvar" projesini sıfırdan hayata geçirmemi sağlayacak uçtan uca, üretime hazır (production-ready) bir yazılım mimarisi, kod blokları ve akademik metodoloji oluşturmanı istiyorum. 
+
+Bu siber güvenlik duvarı (WAF katmanı), bir kullanıcının promptu ile hedef LLM (Örn: GPT-4, Llama-3) arasında bir ters proxy (reverse proxy) gibi çalışmalı, hem Girdiyi (Input Injection) hem de Çıktıyı (Output Data Exfiltration) gerçek zamanlı olarak intercept edip (kesip) taramalıdır.
+
+Lütfen bana bu projeyi modüler bir şekilde inşa etmem için şu adımları eksiksiz, temiz Python kodu (PEP 8 standartlarında) ve derin açıklamalarla sun:
+
+1. PROJE MİMARİSİ VE PIPELINE TASARIMI:
+- Sistem mimarisinin veri akış diyagramını (Dataflow) açıklayarak katmanları tanımla.
+- Hız ve düşük gecikme süresi (low-latency < 50ms) için asenkron (FastAPI tabanlı) bir pipeline yapısı kur.
+
+2. GİRDİ FİLTRELEME MOTORU (INPUT PROTECTION COMPONENT):
+- Vektör Benzerliği Analizi: HuggingFace'ten hafif bir model (örn: "all-MiniLM-L6-v2") kullanarak bilinen saldırı vektörlerinin gömmelerini (embeddings) karşılaştıran ve Cosine Similarity ile bloklama yapan Python sınıfını yaz.
+- Hevalistik ve RegEx Katmanı: Base64 şifreleme, gizli token kaçakçılığı (token smuggling) ve rol değişimi (DAN) kalıplarını regex ve kural tabanlı yakalayan mekanizmayı entegre et.
+
+3. ÇIKTI KONTROLÜ VE VERİ SIZINTISI ENGELLEME (OUTPUT GUARDRAILS):
+- Modelin ürettiği çıktıyı son kullanıcıya gitmeden önce tarayan, içinde gizli API anahtarları, PII (Kişisel veri) veya "http/https" içeren sızdırma linkleri (data exfiltration) algılandığında çıktıyı manipüle edip sansürleyen modülü yaz.
+
+4. YAPAY ZEKA DESTEKLİ ANOMALİ TESPİTİ (CLASSIFIER):
+- Küçük bir NLP sınıflandırıcısı (örneğin gömülü bir Scikit-Learn tabanlı Lojistik Regresyon veya küçük bir Transformer modeli) entegre ederek, promptun "Güvenli (Safe)" mi yoksa "Saldırı (Malware/Jailbreak)" mi olduğunu tahmin eden yapay zeka modelinin eğitim ve çıkarım (inference) kodunu sağla.
+
+5. TEST VE VALİDASYON (BENCHMARKING):
+- Bu yazdığımız sistemi test etmek için sahte bir LLM çağrısı simüle eden ve sisteme hem yasal promptlar hem de gelişmiş Prompt Injection promptları göndererek loglama yapan bir test scripti (PyTest uyumlu veya doğrudan main.py üzerinde) hazırla.
+
+Tüm kodları birleştirilebilir, modüler, production-ready, bol yorum satırlı ve Dockerize edilmeye uygun bir yapıda ver. Kuramsal anlatımı akademik derinlikte tut ki bu mimariyi Oxford başvurusunda araştırma önerisi (Research Proposal) olarak sunabileyim.

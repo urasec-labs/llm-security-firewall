@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
+    "dev": "uv run --project ../.. uvicorn --app-dir . firewall.main:app --host 0.0.0.0 --port ${PORT:-8080} --reload",
     "build": "node ./build.mjs",
-    "start": "node --enable-source-maps ./dist/index.mjs",
+    "start": "uv run --project ../.. uvicorn --app-dir . firewall.main:app --host 0.0.0.0 --port ${PORT:-8080}",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

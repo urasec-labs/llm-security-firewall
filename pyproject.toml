@@ -1,0 +1,22 @@
+[project]
+name = "llm-firewall"
+version = "0.1.0"
+description = "A modular FastAPI security gateway for screening LLM prompts and responses."
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.142.2",
+    "httpx>=0.28.1",
+    "scikit-learn>=1.9.1",
+    "uvicorn>=0.54.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=9.1.1"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["artifacts/api-server/tests"]
+pythonpath = ["artifacts/api-server"]
+addopts = "-q"

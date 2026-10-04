@@ -1,44 +1,52 @@
-# [Project name]
+# LLM Security Gateway
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A defensive FastAPI proxy that screens prompts before an LLM call and redacts sensitive model output before returning it.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `pnpm --filter @workspace/api-server run dev` — start the FastAPI gateway on the workflow port
+- `uv run --project . pytest` — run the Python tests
+- `PYTHONPATH=artifacts/api-server uv run --project . python artifacts/api-server/scripts/benchmark.py --iterations 100` — run the local screening benchmark
+- `pnpm --filter @workspace/api-server run typecheck` — check the retained TypeScript scaffold
+- Default mode uses a deterministic local demo upstream. Remote mode needs `UPSTREAM_MODE`, `UPSTREAM_BASE_URL`, and `UPSTREAM_API_KEY` configured outside source control.
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- pnpm workspace, Python 3.13, FastAPI, Uvicorn, HTTPX
+- Input classifier: scikit-learn TF-IDF + logistic regression
+- Optional semantic detector: sentence-transformers MiniLM (disabled by default)
+- Docker image definition: `artifacts/api-server/Dockerfile`
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/api-server/firewall/` — gateway, detectors, input/output guards, and upstream adapters
+- `artifacts/api-server/tests/` — pytest coverage
+- `artifacts/api-server/scripts/benchmark.py` — local warm-pipeline benchmark
+- `artifacts/api-server/README.md` — API usage, configuration, deployment, and evaluation methodology
+- `pyproject.toml` / `uv.lock` — Python dependencies and lockfile
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- The API uses the full `/api` prefix because the artifact proxy does not strip service paths.
+- The upstream URL is operator-configured, HTTPS-only in remote mode, and never accepted from a request.
+- Streaming is rejected until output can be inspected before tokens are released.
+- The default demo upstream avoids external calls; remote model credentials must be runtime secrets.
+- MiniLM is opt-in because its download, memory use, and CPU latency vary by deployment.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Provides an OpenAI-compatible chat-completions endpoint, standalone input/output scanning endpoints, low-cardinality in-memory metrics, a trainable baseline classifier, and a synthetic benchmark.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+No additional standing preferences recorded.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Input screening covers `user` and `tool` messages; system/developer roles are treated as operator-controlled.
+- The bundled classifier corpus is illustrative only and must not be presented as a production evaluation.
+- Enabling MiniLM requires installing `sentence-transformers` and may exceed a 50 ms screening budget.
+- Do not log raw prompts, completions, or upstream credentials.
 
 ## Pointers
 
