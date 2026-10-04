@@ -22,3 +22,12 @@ timeoutMs = 20000
 [nix]
 channel = "stable-25_05"
 packages = ["glibcLocales"]
+
+[userenv]
+
+[userenv.shared]
+AUTH_REQUIRED = "true"
+SEMANTIC_ENABLED = "false"
+UPSTREAM_BASE_URL = "https://api.groq.com/openai/v1"
+UPSTREAM_MODE = "demo"
+UPSTREAM_PROVIDER = "groq"

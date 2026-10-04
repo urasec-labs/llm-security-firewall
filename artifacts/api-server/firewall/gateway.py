@@ -29,7 +29,10 @@ class Gateway:
         self,
         payload: dict[str, Any],
     ) -> tuple[dict[str, Any], list[str]]:
-        response = await self.upstream.complete(payload)
+        if payload.get("stream") is True:
+            response = await self.upstream.complete_stream(payload)
+        else:
+            response = await self.upstream.complete(payload)
         redaction_findings: set[str] = set()
 
         def sanitize_value(value: Any) -> Any:

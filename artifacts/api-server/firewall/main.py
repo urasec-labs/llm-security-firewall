@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import json
 import time
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Iterator
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from firewall.access_control import (
+    InMemoryRateLimiter,
+    enforce_access,
+    request_identity,
+)
+from firewall.audit import get_audit_logger
 from firewall.config import Settings
 from firewall.gateway import Gateway, decision_to_dict
 from firewall.models import (
@@ -79,6 +86,8 @@ class BodyLimitMiddleware:
 
 def _create_app(settings: Settings | None = None) -> FastAPI:
     runtime_settings = settings or Settings.from_env()
+    limiter = InMemoryRateLimiter(runtime_settings)
+    audit_logger = get_audit_logger()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -106,6 +115,40 @@ def _create_app(settings: Settings | None = None) -> FastAPI:
         max_body_bytes=runtime_settings.max_body_bytes,
     )
 
+    @app.middleware("http")
+    async def audit_requests(request: Request, call_next: Any) -> Any:
+        started = time.perf_counter()
+        request.state.audit_client_id = request_identity(request, None)
+        request.state.audit_event = "request_complete"
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            if status_code >= 400 and request.state.audit_event == "request_complete":
+                request.state.audit_event = "http_error"
+            return response
+        finally:
+            audit_logger.info(
+                "request",
+                extra={
+                    "audit_record": {
+                        "event": request.state.audit_event,
+                        "method": request.method,
+                        "path": request.url.path,
+                        "status_code": status_code,
+                        "duration_ms": round(
+                            (time.perf_counter() - started) * 1000,
+                            3,
+                        ),
+                        "client_id": request.state.audit_client_id,
+                        "findings": getattr(request.state, "audit_findings", []),
+                    }
+                },
+            )
+
+    async def access_guard(request: Request) -> None:
+        enforce_access(request, runtime_settings, limiter)
+
     @app.get("/api/healthz", response_model=HealthResponse)
     async def healthz(request: Request) -> HealthResponse:
         gateway: Gateway | None = getattr(request.app.state, "gateway", None)
@@ -116,11 +159,15 @@ def _create_app(settings: Settings | None = None) -> FastAPI:
             classifier_ready=bool(gateway and gateway.input_guard.classifier.ready),
         )
 
-    @app.get("/api/metrics")
+    @app.get("/api/metrics", dependencies=[Depends(access_guard)])
     async def metrics(request: Request) -> dict[str, int | float]:
         return request.app.state.gateway.metrics.snapshot()
 
-    @app.post("/api/scan/input", response_model=ScanResponse)
+    @app.post(
+        "/api/scan/input",
+        response_model=ScanResponse,
+        dependencies=[Depends(access_guard)],
+    )
     async def scan_input(
         body: TextScanRequest,
         request: Request,
@@ -135,9 +182,12 @@ def _create_app(settings: Settings | None = None) -> FastAPI:
         request.app.state.gateway.metrics.record_guard(
             (time.perf_counter() - started) * 1000
         )
+        request.state.audit_findings = list(decision.findings)
+        if decision.blocked:
+            request.state.audit_event = "input_blocked"
         return decision_to_dict(decision)
 
-    @app.post("/api/scan/output")
+    @app.post("/api/scan/output", dependencies=[Depends(access_guard)])
     async def scan_output(
         body: TextScanRequest,
         request: Request,
@@ -145,27 +195,25 @@ def _create_app(settings: Settings | None = None) -> FastAPI:
         result = request.app.state.gateway.output_guard.redact(body.text)
         if result.redacted:
             request.app.state.gateway.metrics.record_redaction()
+            request.state.audit_event = "output_redacted"
+            request.state.audit_findings = list(result.findings)
         return {
             "text": result.text,
             "redacted": result.redacted,
             "findings": list(result.findings),
         }
 
-    @app.post("/api/chat/completions", response_model=None)
+    @app.post(
+        "/api/chat/completions",
+        response_model=None,
+        dependencies=[Depends(access_guard)],
+    )
     async def chat_completions(
         body: ChatCompletionRequest,
         request: Request,
-    ) -> JSONResponse | dict[str, Any]:
+    ) -> JSONResponse | StreamingResponse | dict[str, Any]:
         gateway: Gateway = request.app.state.gateway
         gateway.metrics.record_chat()
-        if body.stream:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Streaming is not supported until incremental output "
-                    "scanning is enabled."
-                ),
-            )
 
         untrusted_messages = [
             message.content
@@ -190,6 +238,8 @@ def _create_app(settings: Settings | None = None) -> FastAPI:
 
         if decision.blocked:
             gateway.metrics.record_blocked()
+            request.state.audit_event = "input_blocked"
+            request.state.audit_findings = list(decision.findings)
             return JSONResponse(
                 status_code=403,
                 content={
@@ -213,13 +263,80 @@ def _create_app(settings: Settings | None = None) -> FastAPI:
             ) from error
 
         if findings:
+            request.state.audit_event = "output_redacted"
+            request.state.audit_findings = findings
             safe_response["security"] = {
                 "output_redacted": True,
                 "findings": findings,
             }
+        if body.stream:
+            return StreamingResponse(
+                _as_openai_sse(safe_response),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                    "X-LLM-Security-Redacted": str(bool(findings)).lower(),
+                },
+            )
         return safe_response
 
     return app
+
+
+def _as_openai_sse(response: dict[str, Any]) -> Iterator[bytes]:
+    """Emit a sanitized completion as OpenAI-compatible SSE frames."""
+    metadata: dict[str, Any] = {
+        "id": response.get("id", "chatcmpl-buffered"),
+        "object": "chat.completion.chunk",
+        "created": response.get("created", 0),
+        "model": response.get("model", ""),
+    }
+    if response.get("system_fingerprint") is not None:
+        metadata["system_fingerprint"] = response["system_fingerprint"]
+
+    for choice in response.get("choices", []):
+        if not isinstance(choice, dict):
+            continue
+        index = choice.get("index", 0)
+        message = choice.get("message", {})
+        if not isinstance(message, dict):
+            message = {}
+        yield _sse_frame(
+            {
+                **metadata,
+                "choices": [
+                    {"index": index, "delta": message, "finish_reason": None}
+                ],
+            }
+        )
+        yield _sse_frame(
+            {
+                **metadata,
+                "choices": [
+                    {
+                        "index": index,
+                        "delta": {},
+                        "finish_reason": choice.get("finish_reason") or "stop",
+                    }
+                ],
+            }
+        )
+
+    if isinstance(response.get("usage"), dict):
+        yield _sse_frame(
+            {
+                **metadata,
+                "choices": [],
+                "usage": response["usage"],
+            }
+        )
+    yield b"data: [DONE]\n\n"
+
+
+def _sse_frame(payload: dict[str, Any]) -> bytes:
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return f"data: {encoded}\n\n".encode("utf-8")
 
 
 app = _create_app()
