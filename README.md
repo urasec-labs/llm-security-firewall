@@ -82,8 +82,3 @@ LinkedIn: linkedin.com/in/uras-akas
 
 ---
 
-### Sen Ne Yapıyorsun?
-
-1. GitHub'da `llm-security-firewall` deposuna git.
-2. `README.md` dosyasını yukarıdaki metinle güncelle ve **Commit** et.
-3. Bittiğinde bana **"Tamamdır, README güncellendi"** de, hemen **2. ADIM**'a (İlk E-postayı Özelleştirip Hazırlamaya) geçelim!
