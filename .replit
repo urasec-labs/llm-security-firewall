@@ -29,5 +29,5 @@ packages = ["glibcLocales"]
 AUTH_REQUIRED = "true"
 SEMANTIC_ENABLED = "false"
 UPSTREAM_BASE_URL = "https://api.groq.com/openai/v1"
-UPSTREAM_MODE = "demo"
+UPSTREAM_MODE = "remote"
 UPSTREAM_PROVIDER = "groq"

@@ -9,6 +9,7 @@ from typing import Any, Iterator
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from firewall.access_control import (
@@ -88,6 +89,7 @@ def _create_app(settings: Settings | None = None) -> FastAPI:
     runtime_settings = settings or Settings.from_env()
     limiter = InMemoryRateLimiter(runtime_settings)
     audit_logger = get_audit_logger()
+    bearer_scheme = HTTPBearer(auto_error=False)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -146,7 +148,10 @@ def _create_app(settings: Settings | None = None) -> FastAPI:
                 },
             )
 
-    async def access_guard(request: Request) -> None:
+    async def access_guard(
+        request: Request,
+        _credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    ) -> None:
         enforce_access(request, runtime_settings, limiter)
 
     @app.get("/api/healthz", response_model=HealthResponse)
@@ -277,6 +282,7 @@ def _create_app(settings: Settings | None = None) -> FastAPI:
                     "Cache-Control": "no-cache",
                     "X-Accel-Buffering": "no",
                     "X-LLM-Security-Redacted": str(bool(findings)).lower(),
+                    "X-LLM-Security-Findings": ",".join(findings),
                 },
             )
         return safe_response

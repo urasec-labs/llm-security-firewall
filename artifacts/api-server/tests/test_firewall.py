@@ -225,6 +225,8 @@ def test_buffered_streaming_returns_sanitized_openai_sse() -> None:
     assert "alice@example.com" not in response.text
     assert "[REDACTED_EMAIL]" in response.text
     assert "data: [DONE]" in response.text
+    assert response.headers["x-llm-security-redacted"] == "true"
+    assert "email" in response.headers["x-llm-security-findings"]
 
 
 def test_groq_compatible_stream_is_buffered_and_aggregated() -> None:
@@ -346,6 +348,15 @@ def test_required_client_auth_fails_closed_if_secret_is_missing() -> None:
         )
 
     assert response.status_code == 503
+
+
+def test_openapi_documents_bearer_auth_for_protected_routes() -> None:
+    with TestClient(_create_app(Settings())) as client:
+        schema = client.get("/api/openapi.json").json()
+
+    completion = schema["paths"]["/api/chat/completions"]["post"]
+    assert completion["security"]
+    assert "HTTPBearer" in schema["components"]["securitySchemes"]
 
 
 def test_combined_prompt_length_limit_is_enforced() -> None:
